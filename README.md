@@ -10,6 +10,10 @@ DocGenie AI automatically generates Python docstrings using AST analysis.
 * Download documentation as TXT and PDF
 * Simple Gradio interface
 
+## AI Model
+
+This project uses the IBM Granite 3.3 2B Instruct model for AI-powered text generation.
+
 ## Installation
 
 ```bash

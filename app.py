@@ -1,4 +1,3 @@
-
 # ===============================
 # IMPORTS
 # ===============================
@@ -6,6 +5,13 @@ import gradio as gr
 import ast
 import os
 import webbrowser
+import requests
+import autopep8
+import black
+import torch
+
+from transformers import pipeline
+
 from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatted
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -13,9 +19,18 @@ from reportlab.lib.pagesizes import A4
 
 
 # ===============================
+# LOAD AI MODEL
+# ===============================
+generator = pipeline(
+    "text-generation",
+    model="ibm-granite/granite-3.3-2b-instruct",
+    device=-1
+)
+
+
+# ===============================
 # DOCGENIE ANALYZER
 # ===============================
-
 class DocGenieAnalyzer:
 
     @staticmethod
@@ -39,7 +54,6 @@ class DocGenieAnalyzer:
 
         return "None"
 
-
     @staticmethod
     def extract_functions(code):
 
@@ -58,7 +72,6 @@ class DocGenieAnalyzer:
                 })
 
         return functions
-
 
     @staticmethod
     def analyze_function_logic(node):
@@ -81,7 +94,6 @@ class DocGenieAnalyzer:
                 logic["math"] = True
 
         return logic
-
 
     @staticmethod
     def generate_google_docstring(signature, analysis):
@@ -107,7 +119,6 @@ class DocGenieAnalyzer:
 
         return doc
 
-
     @staticmethod
     def generate_numpy_docstring(signature):
 
@@ -127,9 +138,55 @@ class DocGenieAnalyzer:
 
 
 # ===============================
+# AI DOCSTRING IMPROVER
+# ===============================
+def improve_docstring_ai(code):
+
+    prompt = f"""
+Improve the docstrings in this Python code.
+
+Rules:
+- Do NOT modify any code.
+- Do NOT remove functions.
+- Only improve the text inside the docstrings.
+
+Python Code:
+{code}
+"""
+
+    result = generator(prompt, max_new_tokens=150)
+
+    return result[0]["generated_text"]
+
+
+# ===============================
+# CODE FORMATTER
+# ===============================
+def format_code(code):
+
+    try:
+        code = autopep8.fix_code(code)
+        code = black.format_str(code, mode=black.FileMode())
+        return code
+    except:
+        return code
+
+
+# ===============================
+# API CHECK
+# ===============================
+def api_status():
+
+    try:
+        r = requests.get("https://api.github.com")
+        return f"API Status: {r.status_code}"
+    except:
+        return "API request failed"
+
+
+# ===============================
 # FILE LOADER
 # ===============================
-
 def load_py_file(file):
 
     if file is None:
@@ -142,9 +199,7 @@ def load_py_file(file):
 # ===============================
 # PROCESS CODE
 # ===============================
-
 def process_code(code, style):
-
     try:
 
         functions = DocGenieAnalyzer.extract_functions(code)
@@ -155,7 +210,6 @@ def process_code(code, style):
         lines = code.split("\n")
 
         for func in functions:
-
             analysis = DocGenieAnalyzer.analyze_function_logic(func["node"])
 
             if style == "Google":
@@ -164,29 +218,31 @@ def process_code(code, style):
                 docstring = DocGenieAnalyzer.generate_numpy_docstring(func)
 
             for i, line in enumerate(lines):
-
                 if line.strip().startswith(f"def {func['name']}"):
-
                     indent = " " * (len(line) - len(line.lstrip()) + 4)
                     formatted = indent + docstring.replace("\n", "\n" + indent)
-
                     lines.insert(i + 1, formatted)
                     break
 
         final_code = "\n".join(lines)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # AI enhancement (optional)
+        ai_output = improve_docstring_ai(final_code)
+        if ai_output:
+            # Keep your AST-generated code safe
+            final_code = final_code
 
+        # Format code
+        final_code = format_code(final_code)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         txt_path = f"docgenie_{timestamp}.txt"
         pdf_path = f"docgenie_{timestamp}.pdf"
 
-        # Save TXT
         with open(txt_path, "w") as f:
             f.write(final_code)
 
-        # Create PDF
         styles = getSampleStyleSheet()
-
         code_style = ParagraphStyle(
             name="Code",
             fontName="Courier",
@@ -194,47 +250,23 @@ def process_code(code, style):
         )
 
         story = []
-
-        story.append(Paragraph("DocGenie AI Generated Docstrings", styles["Title"]))
+        story.append(Paragraph("DocGenie AI Generated Documentation", styles["Title"]))
         story.append(Spacer(1, 20))
         story.append(Preformatted(final_code, code_style))
 
         doc = SimpleDocTemplate(pdf_path, pagesize=A4)
         doc.build(story)
 
-        status = "Docstring Generated Successfully"
-
+        status = api_status()
         return final_code, os.path.abspath(txt_path), os.path.abspath(pdf_path), status
 
     except Exception as e:
-
         return str(e), None, None, "Error occurred"
-
-
-# ===============================
-# SHARE FUNCTIONS
-# ===============================
-
-def share_whatsapp():
-
-    url = "https://wa.me/?text=Check%20out%20DocGenie%20AI%20-%20Python%20Docstring%20Generator"
-    webbrowser.open(url)
-
-    return "Opening WhatsApp..."
-
-
-def share_facebook():
-
-    url = "https://www.facebook.com/sharer/sharer.php?u=https://example.com"
-    webbrowser.open(url)
-
-    return "Opening Facebook..."
 
 
 # ===============================
 # UI
 # ===============================
-
 with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
 
     gr.Markdown("# 🚀 DocGenie AI")
@@ -242,7 +274,6 @@ with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
 
     with gr.Row():
 
-        # LEFT PANEL
         with gr.Column(scale=1):
 
             code_input = gr.Code(
@@ -252,7 +283,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
             )
 
             file_upload = gr.File(
-                label="Drag & Drop Python File",
+                label="Upload Python File",
                 file_types=[".py"]
             )
 
@@ -269,7 +300,6 @@ with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
 
             status = gr.Textbox(label="Status")
 
-        # RIGHT PANEL
         with gr.Column(scale=1):
 
             output_code = gr.Code(
@@ -283,22 +313,13 @@ with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
             txt_file = gr.File(label="TXT File")
             pdf_file = gr.File(label="PDF File")
 
-            gr.Markdown("### Share on Social Media")
+            gr.Markdown("### Share")
 
             with gr.Row():
 
-                whatsapp_btn = gr.Button(
-                    "WhatsApp",
-                    variant="secondary"
-                )
+                whatsapp_btn = gr.Button("WhatsApp")
+                facebook_btn = gr.Button("Facebook")
 
-                facebook_btn = gr.Button(
-                    "Facebook",
-                    variant="secondary"
-                )
-
-
-    # EVENTS
 
     file_upload.change(
         load_py_file,
@@ -326,5 +347,4 @@ with gr.Blocks(theme=gr.themes.Soft(), title="DocGenie AI") as demo:
 # ===============================
 # LAUNCH
 # ===============================
-
 demo.launch(share=True)

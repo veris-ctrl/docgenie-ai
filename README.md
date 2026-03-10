@@ -52,5 +52,6 @@ docgenie-ai
 ├── README.md
 └── .gitignore
 ```
+##License
 
 MIT License
